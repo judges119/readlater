@@ -1,0 +1,61 @@
+stages:
+  - convert_page_to_epub
+  - convert_epub_to_mobi
+  - send_email_to_kindle
+
+variables:
+  SITE_PROTOCOL: https
+  SITE_TO_READ_LATER: https://az.id.au/ops/claude-the-laptop/
+
+convertPageToEpub:
+  image:
+    name: pandoc/core:latest
+    entrypoint: ["/bin/sh", "-c"]
+  stage: convert_page_to_epub
+  only:
+    - web
+  script:
+    - mkdir public
+    - pandoc -s -r html $SITE_TO_READ_LATER -o public/readlater.epub
+  artifacts:
+    paths:
+      - public
+
+convertEpubToMobi:
+  image: linuxserver/calibre:latest
+  stage: convert_epub_to_mobi
+  only:
+    - web
+  script:
+    - cd public
+    - ebook-convert readlater.epub readlater.mobi
+  dependencies:
+    - convertPageToEpub
+  artifacts:
+    paths:
+      - public
+
+sendEmailToKindle:
+  image: alpine:latest
+  stage: send_email_to_kindle
+  only:
+    - web
+  dependencies:
+    - convertEpubToMobi
+  script:
+    - apk add bash coreutils msmtp sed
+    - bash -c "sed -i 's/\[MSMTPSERV\]/$(echo \"$MSMTPSERV\")/' mailconfig"
+    - bash -c "sed -i 's/\[MSMTPFROM\]/$(echo \"$MSMTPFROM\")/' mailconfig"
+    - bash -c "sed -i 's/\[MSMTPUSER\]/$(echo \"$MSMTPUSER\")/' mailconfig"
+    - bash -c "sed -i 's/\[MSMTPPASS\]/$(echo \"$MSMTPPASS\")/' mailconfig"
+    - cp mailconfig /etc/msmtprc
+    - bash -c "sed -i 's/\[MESSAGEIDREPLACE\]/$(date | sha1sum - | awk '{print $1}')11/' readlater.msg"
+    - base64 -i public/readlater.mobi >> readlater.msg
+    - echo "--=_[MESSAGEBOUNDARYREPLACE]--" >> readlater.msg
+    - bash -c "sed -i 's/\[MESSAGEBOUNDARYREPLACE\]/$(date | sha1sum - | awk '{print $1}')22/' readlater.msg"
+    - bash -c "sed -i 's/filename=readlater.mobi/filename=readlater.mobi;\n size=$(ls -l public | grep readlater.mobi | awk '{print $5}')/' readlater.msg"
+    - bash -c "sed -i 's/readlater.mobi/$(date | sha1sum - | awk '{print $1}')33.mobi/' readlater.msg"
+    - cat readlater.msg | msmtp --account=yourmail $KINDLEEMAIL
+  artifacts:
+    paths:
+      - readlater.msg

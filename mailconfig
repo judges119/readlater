@@ -1,0 +1,18 @@
+# Set default values for all following accounts.
+defaults
+auth           on
+tls            on
+tls_starttls   on
+tls_trust_file /etc/ssl/certs/ca-certificates.crt
+syslog         on
+
+# AzMail
+account        yourmail
+host           [MSMTPSERV]
+port           587
+from           [MSMTPFROM]
+user           [MSMTPUSER]
+password       [MSMTPPASS]
+
+# Set a default account
+account default : yourmail
