@@ -21,3 +21,5 @@ You'll have to log into your Amazon account, go to Content And Devices, go to Pr
 ## Security Considerations
 
 Anyone with sufficient privileges on your GitLab repository/instance may be able to view these variables, which does include a password so please be cautious.
+
+Also note anyone with sufficient privilege may be able to run pipelines, so lock that down too.
