@@ -1,4 +1,5 @@
 stages:
+  - download_html
   - convert_page_to_epub
   - convert_epub_to_mobi
   - send_email_to_kindle
@@ -6,6 +7,20 @@ stages:
 variables:
   SITE_PROTOCOL: https
   SITE_TO_READ_LATER: https://az.id.au/ops/claude-the-laptop/
+
+downloadHtml:
+  image: alpine:latest
+  stage: download_html
+  only:
+    - web
+  script:
+    - apk add wget
+    - mkdir public
+    - cd public
+    - wget -E -H -k -p --content-on-error --restrict-file-names=nocontrol $SITE_TO_READ_LATER || true
+  artifacts:
+    paths:
+      - public
 
 convertPageToEpub:
   image:
@@ -15,11 +30,17 @@ convertPageToEpub:
   only:
     - web
   script:
-    - mkdir public
-    - pandoc -s -r html $SITE_TO_READ_LATER -o public/readlater.epub
+    - mkdir /epub
+    - cd public
+    - echo `echo $SITE_TO_READ_LATER | sed 's/^https:\/\///' | sed 's/$/.html/' | sed 's/\/.html$/\/index.html/' | sed 's/\/[^/]*.html$//'`
+    - echo `echo $SITE_TO_READ_LATER | sed 's/^https:\/\///' | sed 's/$/.html/' | sed 's/\/.html$/\/index.html/' | sed 's/^.*\///'`
+    - cd `echo $SITE_TO_READ_LATER | sed 's/^https:\/\///' | sed 's/$/.html/' | sed 's/\/.html$/\/index.html/' | sed 's/\/[^/]*.html$//'`
+    - pandoc -s -r html `echo $SITE_TO_READ_LATER | sed 's/^https:\/\///' | sed 's/$/.html/' | sed 's/\/.html$/\/index.html/' | sed 's/^.*\///'` -o $CI_PROJECT_DIR/readlater.epub
+  dependencies:
+    - downloadHtml
   artifacts:
     paths:
-      - public
+      - readlater.epub
 
 convertEpubToMobi:
   image: linuxserver/calibre:latest
@@ -27,13 +48,12 @@ convertEpubToMobi:
   only:
     - web
   script:
-    - cd public
     - ebook-convert readlater.epub readlater.mobi
   dependencies:
     - convertPageToEpub
   artifacts:
     paths:
-      - public
+      - readlater.mobi
 
 sendEmailToKindle:
   image: alpine:latest
@@ -50,10 +70,10 @@ sendEmailToKindle:
     - bash -c "sed -i 's/\[MSMTPPASS\]/$(echo \"$MSMTPPASS\")/' mailconfig"
     - cp mailconfig /etc/msmtprc
     - bash -c "sed -i 's/\[MESSAGEIDREPLACE\]/$(date | sha1sum - | awk '{print $1}')11/' readlater.msg"
-    - base64 -i public/readlater.mobi >> readlater.msg
+    - base64 -i readlater.mobi >> readlater.msg
     - echo "--=_[MESSAGEBOUNDARYREPLACE]--" >> readlater.msg
     - bash -c "sed -i 's/\[MESSAGEBOUNDARYREPLACE\]/$(date | sha1sum - | awk '{print $1}')22/' readlater.msg"
-    - bash -c "sed -i 's/filename=readlater.mobi/filename=readlater.mobi;\n size=$(ls -l public | grep readlater.mobi | awk '{print $5}')/' readlater.msg"
+    - bash -c "sed -i 's/filename=readlater.mobi/filename=readlater.mobi;\n size=$(ls -l $CI_PROJECT_DIR | grep readlater.mobi | awk '{print $5}')/' readlater.msg"
     - bash -c "sed -i 's/readlater.mobi/$(date | sha1sum - | awk '{print $1}')33.mobi/' readlater.msg"
     - cat readlater.msg | msmtp --account=yourmail $KINDLEEMAIL
   artifacts:
